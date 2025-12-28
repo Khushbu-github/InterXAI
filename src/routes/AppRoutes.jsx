@@ -14,6 +14,7 @@ import Leaderboard from '../pages/Leaderboard';
 import DSAInterviewPlatform from '../pages/DasInterViewPlatForm';
 import EnhancedProctoredRouteWrapper from "./ProtectorRouteWrapper";
 import ResumeQuestionSession from "../pages/ResumeQuestionSession";
+import InterviewScreenshotCapture from "../pages/Interviewscreenshotcapture"
 export default function AppRoutes() {
   return (
     <Routes>
@@ -41,6 +42,7 @@ export default function AppRoutes() {
   path="/resume-platform/:sessionId"
   element={
     <EnhancedProctoredRouteWrapper>
+      <InterviewScreenshotCapture/>
       <ResumeQuestionSession/>
     </EnhancedProctoredRouteWrapper>
   }/>
@@ -48,6 +50,7 @@ export default function AppRoutes() {
     path="/dsa-interview-platform/:sessionId" 
     element={
       <EnhancedProctoredRouteWrapper>
+         <InterviewScreenshotCapture/>
         <DSAInterviewPlatform />
       </EnhancedProctoredRouteWrapper>
     } 

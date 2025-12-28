@@ -1414,7 +1414,7 @@ const ProctoredRouteWrapper = ({ children }) => {
       ...data
     };
     
-    console.log(`[PROCTORING LOG] ${timestamp} - ${type.toUpperCase()}: ${message}`, logData);
+    //console.log(`[PROCTORING LOG] ${timestamp} - ${type.toUpperCase()}: ${message}`, logData);
   };
 
   // Log system status every 10 seconds instead of every second
