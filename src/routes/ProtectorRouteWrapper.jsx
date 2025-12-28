@@ -3521,7 +3521,7 @@ const ProctoredContent = ({ children }) => {
       ...data
     };
     
-    console.log(`[PROCTORING LOG] ${timestamp} - ${type.toUpperCase()}: ${message}`, logData);
+    //console.log(`[PROCTORING LOG] ${timestamp} - ${type.toUpperCase()}: ${message}`, logData);
   };
 
   const logSystemStatus = () => {

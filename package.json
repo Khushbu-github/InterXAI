@@ -22,6 +22,7 @@
     "axios": "^1.10.0",
     "chart.js": "^4.5.0",
     "face-api.js": "^0.22.2",
+    "html2canvas": "^1.4.1",
     "lucide-react": "^0.513.0",
     "pdfjs-dist": "^5.3.31",
     "react": "^19.0.0",
