@@ -5,6 +5,10 @@ import { Calendar, Clock, Users, Plus, Trash2, ChevronRight, ChevronLeft, Save, 
 import { getAuthToken } from '../utils/handleToken';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast} from 'react-toastify';
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2b5e3b265c318f58e12239e186669d703cbb6abd
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const baseUrl = import.meta.env.VITE_API_URL;
 // Form Container Component
@@ -282,11 +286,19 @@ const QuestionsConfig = ({ onNext, onBack, formData, setFormData }) => {
     }));
   };
 
+<<<<<<< HEAD
 //   const generateQuestionsWithGemini = async () => {
 //     if (!GEMINI_API_KEY) {
 //       toast.error('Gemini API key not configured');
 //       return;
 //     }
+=======
+  const generateQuestionsWithGroq = async () => {
+    if (!GROQ_API_KEY) {
+      toast.error('Groq API key not configured');
+      return;
+    }
+>>>>>>> 2b5e3b265c318f58e12239e186669d703cbb6abd
 
 //     setIsGenerating(true);
 //     try {
@@ -540,6 +552,7 @@ Example format:
   }
 ]`;
 
+<<<<<<< HEAD
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -567,6 +580,83 @@ Example format:
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(`API request failed with status ${response.status}: ${errorData.error?.message || 'Unknown error'}`);
+=======
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{
+            role: 'user',
+            content: prompt
+          }],
+          temperature: 0.7,
+          max_tokens: 2048,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('Invalid response format from Groq API');
+      }
+      
+      const generatedText = data.choices[0].message.content;
+      
+      let cleanedText = generatedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      
+      let jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        const firstBracket = cleanedText.indexOf('[');
+        const lastBracket = cleanedText.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+          cleanedText = cleanedText.substring(firstBracket, lastBracket + 1);
+        }
+      } else {
+        cleanedText = jsonMatch[0];
+      }
+      
+      try {
+        const questions = JSON.parse(cleanedText);
+        if (Array.isArray(questions) && questions.length > 0) {
+          const validQuestions = questions.filter(q => 
+            q && typeof q === 'object' && 
+            typeof q.question === 'string' && 
+            typeof q.answer === 'string' &&
+            q.question.trim() !== '' && 
+            q.answer.trim() !== ''
+          );
+          
+          if (validQuestions.length > 0) {
+            setFormData(prev => ({
+              ...prev,
+              questions: [...prev.questions, ...validQuestions.slice(0, 1)]
+            }));
+            toast.success(`Successfully generated and added 1 question!`);
+          } else {
+            throw new Error('No valid questions found in response');
+          }
+        } else {
+          throw new Error('Response is not a valid array of questions');
+        }
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError);
+        console.error('Cleaned text:', cleanedText);
+        throw new Error('Failed to parse generated questions. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error generating questions:', error);
+      toast.error(`Failed to generate questions: ${error.message}. Please add them manually.`);
+    } finally {
+      setIsGenerating(false);
+>>>>>>> 2b5e3b265c318f58e12239e186669d703cbb6abd
     }
 
     const data = await response.json();
@@ -692,8 +782,13 @@ Example format:
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold text-gray-900">Development Questions ({formData.Dev}%)</h3>
             <div className="flex space-x-3">
+<<<<<<< HEAD
               {/* <button
                 onClick={generateQuestionsWithGemini}
+=======
+              <button
+                onClick={generateQuestionsWithGroq}
+>>>>>>> 2b5e3b265c318f58e12239e186669d703cbb6abd
                 disabled={isGenerating}
                 className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-2xl font-semibold hover:from-green-600 hover:to-emerald-600 transition-all duration-300 disabled:opacity-50 flex items-center space-x-2 shadow-lg"
               >

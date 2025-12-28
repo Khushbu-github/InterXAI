@@ -1,18 +1,14 @@
-"use client";
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getAuthToken } from "../utils/handleToken";
-import { Loader2, ArrowLeft, FileText, Eye, User, Mail, Phone, MapPin, Briefcase, GraduationCap, Award, Star, Calendar, ChevronDown, ChevronUp, Building, Code, Trophy, Link, Search, Filter, Download, Share2 } from "lucide-react";
-import { toast} from 'react-toastify';
+import { Loader2, ArrowLeft, FileText, Eye, User, Mail, Phone, MapPin, Briefcase, GraduationCap, Award, Star, Calendar, ChevronDown, ChevronUp, Building, Code, Trophy, Link as LinkIcon, Search, Filter, Download, Share2, MessageSquare, Send, X, Bot } from "lucide-react";
 
 export default function Application() {
-  const { id } = useParams(); // interview ID
+  const { id } = useParams();
   const navigate = useNavigate();
 
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState(null); // { type: 'resume' | 'extracted', app: {} }
+  const [viewMode, setViewMode] = useState(null);
   const [expandedSections, setExpandedSections] = useState({
     summary: true,
     experience: true,
@@ -24,12 +20,21 @@ export default function Application() {
   });
   const [feedbackModal, setFeedbackModal] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all"); // all, approved, pending
-  const [sortBy, setSortBy] = useState("score"); // score, name, date
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [sortBy, setSortBy] = useState("score");
+  
+  // Chatbot states
+  const [chatbotOpen, setChatbotOpen] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+  const chatInputRef = useRef(null);
   
   useEffect(() => {
-    const token = getAuthToken();
+    const token = localStorage.getItem('authToken'); // or however you get your token
     const API_URL = import.meta.env.VITE_API_URL;
+    
     if (!token) {
       navigate("/login");
       return;
@@ -43,14 +48,25 @@ export default function Application() {
         return res.json();
       })
       .then((data) => setApplications(data))
-      .catch(() => toast.error("Could not load applications."))
+      .catch((error) => {
+        console.error("Error loading applications:", error);
+        // You can use toast here if you have react-toastify installed
+        alert("Could not load applications.");
+      })
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
   useEffect(() => {
     const handleEscKey = (event) => {
-      if (event.key === 'Escape' && feedbackModal) {
-        setFeedbackModal(null);
+      if (event.key === 'Escape') {
+        if (feedbackModal) {
+          setFeedbackModal(null);
+        } else if (chatbotOpen) {
+          setChatbotOpen(null);
+          setChatMessages([]);
+        } else if (viewMode) {
+          setViewMode(null);
+        }
       }
     };
   
@@ -59,12 +75,13 @@ export default function Application() {
     return () => {
       document.removeEventListener('keydown', handleEscKey);
     };
-  }, [feedbackModal]);
+  }, [feedbackModal, chatbotOpen, viewMode]);
 
-  const handleProfileClick = (userId) => {
-    if (!userId) return;
-    window.open(`/profile/${userId}`, "_blank"); 
-  };
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chatMessages]);
 
   const getScoreColor = (score) => {
     if (score >= 7) return "text-emerald-600";
@@ -85,6 +102,7 @@ export default function Application() {
     }));
   };
 
+  // Resume parsing functions
   const parseExtractedResume = (resumeText) => {
     if (!resumeText) return null;
   
@@ -126,7 +144,7 @@ export default function Application() {
       }
     };
   
-    lines.forEach((line, index) => {
+    lines.forEach((line) => {
       if (line.startsWith("###")) {
         finalizeExperienceItem();
         finalizeEducationItem();
@@ -176,15 +194,6 @@ export default function Application() {
             } else {
               if (currentExperienceItem) {
                 currentExperienceItem.details.push(cleanLine);
-              } else {
-                currentExperienceItem = {
-                  title: cleanLine,
-                  organization: "",
-                  location: "",
-                  period: "",
-                  details: [],
-                  raw: cleanLine
-                };
               }
             }
           }
@@ -201,47 +210,34 @@ export default function Application() {
               currentEducationItem.details = [];
             } else {
               if (currentEducationItem) {
-                if (cleanLine.includes("CGPA:") || cleanLine.includes("Percentage:")) {
-                  if (cleanLine.includes("CGPA:")) {
-                    currentEducationItem.cgpa = cleanLine.replace("CGPA:", "").trim();
-                  } else if (cleanLine.includes("Percentage:")) {
-                    currentEducationItem.percentage = cleanLine.replace("Percentage:", "").trim();
-                  }
+                if (cleanLine.includes("CGPA:")) {
+                  currentEducationItem.cgpa = cleanLine.replace("CGPA:", "").trim();
+                } else if (cleanLine.includes("Percentage:")) {
+                  currentEducationItem.percentage = cleanLine.replace("Percentage:", "").trim();
                 } else {
                   currentEducationItem.details.push(cleanLine);
                 }
-              } else {
-                currentEducationItem = {
-                  title: cleanLine,
-                  organization: "",
-                  location: "",
-                  period: "",
-                  cgpa: "",
-                  percentage: "",
-                  details: [],
-                  raw: cleanLine
-                };
               }
             }
           }
         } else if (currentSection === "projects") {
-        if (line.startsWith("-")) {
-          const cleanLine = line.replace(/^-\s*/, "");
-          
-          if (isMainProjectLine(cleanLine)) {
-            if (currentProjectText.trim()) {
-              sections.projects.push(currentProjectText.trim());
-            }
-            currentProjectText = cleanLine;
-          } else {
-            if (currentProjectText) {
-              currentProjectText += "\n - " + cleanLine;
-            } else {
+          if (line.startsWith("-")) {
+            const cleanLine = line.replace(/^-\s*/, "");
+            
+            if (isMainProjectLine(cleanLine)) {
+              if (currentProjectText.trim()) {
+                sections.projects.push(currentProjectText.trim());
+              }
               currentProjectText = cleanLine;
+            } else {
+              if (currentProjectText) {
+                currentProjectText += "\n - " + cleanLine;
+              } else {
+                currentProjectText = cleanLine;
+              }
             }
           }
-        }
-      } else if (currentSection === "achievements" || currentSection === "certifications") {
+        } else if (currentSection === "achievements" || currentSection === "certifications") {
           if (line.startsWith("-")) {
             const cleanLine = line.replace("-", "").trim();
             sections[currentSection].push(cleanLine);
@@ -256,23 +252,35 @@ export default function Application() {
   
     return sections;
   };
-  
+
   const isCompanyPositionLine = (line) => {
     const companyPatterns = [
-      /\b(intern|associate|developer|engineer|manager|analyst|coordinator|specialist|assistant|director|lead|senior|junior|consultant|administrator|executive|supervisor|technician|designer|architect|programmer|scientist|researcher|officer|representative|agent|advisor|instructor|trainer|mentor|co-founder|founder|tutor)\b/i,
+      /\b(intern|associate|developer|engineer|manager|analyst)\b/i,
       /\b(at|@)\s+[A-Z]/,
-      /\b(inc|llc|ltd|corp|corporation|company|co\.|pvt|private|limited|group|international|solutions|systems|software|services|technologies|tech|consulting|consultancy|club|academy|institute)\b/i,
-      /\(\s*\d{4}\s*[-–]\s*(\d{4}|present|current)\s*\)/i,
-      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}/i,
-      /\d{4}\s*[-–]\s*(\d{4}|present|current)/i,
-      /^[A-Z][a-z\s]+\s+[-–]\s+[A-Z]/,
-      /^[A-Z][a-z\s]+\s+at\s+[A-Z]/,
-      /\b(startup|enterprise|firm|agency|organization|institution|foundation|university|college|school|hospital|clinic|bank|financial|retail|manufacturing|pharmaceutical|biotechnology|telecommunications|aerospace|automotive|energy|utilities|government|nonprofit|ngo)\b/i
+      /\b(inc|llc|ltd|corp|company)\b/i,
+      /\(\s*\d{4}\s*[-–]\s*(\d{4}|present)\s*\)/i,
     ];
-    
     return companyPatterns.some(pattern => pattern.test(line));
   };
-  
+
+  const isEducationMainLine = (line) => {
+    const educationPatterns = [
+      /\b(b\.e\.|b\.tech|bachelor|master|diploma|degree)\b/i,
+      /\b(university|college|school|institute)\b/i,
+      /\d{4}\s*[-–]\s*\d{4}/i,
+    ];
+    return educationPatterns.some(pattern => pattern.test(line));
+  };
+
+  const isMainProjectLine = (line) => {
+    const mainProjectPatterns = [
+      /\|\s*[A-Za-z]/,
+      /\(\d{4}\)/,
+      /^\*\*.*\*\*:/,
+    ];
+    return mainProjectPatterns.some(pattern => pattern.test(line));
+  };
+
   const parseStructuredItem = (text) => {
     const item = {
       title: "",
@@ -282,48 +290,44 @@ export default function Application() {
       details: [],
       raw: text
     };
-  
-    const patterns = {
-      positionAt: /^(.+?)\s+(?:at|@)\s+(.+?)(?:\s+\((.+?)\))?(?:\s+[-–]\s+(.+?))?$/i,
-      companyPosition: /^(.+?)\s+[-–]\s+(.+?)(?:\s+\((.+?)\))?(?:\s+[-–]\s+(.+?))?$/i,
-      period: /(\d{4})\s*[-–]\s*(\d{4}|present|current)/i,
-      location: /,\s*([^,]+(?:,\s*[A-Z]{2})?)\s*$/i,
-      dateInParens: /\(\s*(.+?)\s*\)/,
-    };
-  
-    let match = text.match(patterns.positionAt);
+
+    const match = text.match(/^(.+?)\s+(?:at|@)\s+(.+?)(?:\s+\((.+?)\))?$/i);
     if (match) {
       item.title = match[1]?.trim() || "";
       item.organization = match[2]?.trim() || "";
-      item.location = match[3]?.trim() || "";
-      item.period = match[4]?.trim() || "";
+      item.period = match[3]?.trim() || "";
     } else {
-      match = text.match(patterns.companyPosition);
-      if (match) {
-        item.organization = match[1]?.trim() || "";
-        item.title = match[2]?.trim() || "";
-        item.location = match[3]?.trim() || "";
-        item.period = match[4]?.trim() || "";
-      }
-    }
-  
-    if (!item.period) {
-      const dateMatch = text.match(patterns.dateInParens);
-      if (dateMatch) {
-        const dateContent = dateMatch[1];
-        if (patterns.period.test(dateContent)) {
-          item.period = dateContent;
-        }
-      }
-    }
-  
-    if (!item.title && !item.organization) {
       item.title = text;
     }
-  
+
     return item;
   };
 
+  const parseEducationItem = (text) => {
+    const item = {
+      title: "",
+      organization: "",
+      location: "",
+      period: "",
+      cgpa: "",
+      percentage: "",
+      details: [],
+      raw: text
+    };
+
+    const match = text.match(/^(.+?)\s+[-–]\s+(.+?)(?:\s+\((.+?)\))?$/i);
+    if (match) {
+      item.title = match[1]?.trim() || "";
+      item.organization = match[2]?.trim() || "";
+      item.period = match[3]?.trim() || "";
+    } else {
+      item.title = text;
+    }
+
+    return item;
+  };
+
+  // Rendering functions
   const renderPersonalInfo = (info) => (
     <div className="bg-white rounded-2xl border border-gray-100 p-8 mb-8 shadow-sm">
       <div className="flex items-center gap-3 mb-6">
@@ -381,11 +385,11 @@ export default function Application() {
             </div>
           </div>
         )}
-        
+
         {info.linkedin && (
           <div className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
             <div className="bg-blue-50 p-2 rounded-lg">
-              <Link size={18} className="text-blue-600" />
+              <LinkIcon size={18} className="text-blue-600" />
             </div>
             <div>
               <p className="text-gray-500 text-sm">LinkedIn</p>
@@ -466,26 +470,18 @@ export default function Application() {
               <Briefcase size={20} className="text-blue-600" />
             </div>
             <div className="flex-1">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-3">
-                <h4 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                  {exp.title || exp.raw}
-                </h4>
-                {exp.period && (
-                  <div className="flex items-center gap-2 text-gray-500 mt-1 lg:mt-0">
-                    <Calendar size={16} />
-                    <span className="text-sm">{exp.period}</span>
-                  </div>
-                )}
-              </div>
+              <h4 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-1">
+                {exp.title || exp.raw}
+              </h4>
               
               {exp.organization && (
                 <div className="flex items-center gap-2 text-gray-700 mb-2">
                   <Building size={16} className="text-gray-500" />
                   <span className="font-medium">{exp.organization}</span>
-                  {exp.location && (
+                  {exp.period && (
                     <>
                       <span className="text-gray-400">•</span>
-                      <span className="text-gray-500">{exp.location}</span>
+                      <span className="text-gray-500">{exp.period}</span>
                     </>
                   )}
                 </div>
@@ -508,78 +504,6 @@ export default function Application() {
     </div>
   );
 
-  const isMainProjectLine = (line) => {
-    const mainProjectPatterns = [
-      /^\*\*.*\*\*:/, 
-      /\|\s*[A-Za-z]/, 
-      /\(GitHub\)/i, 
-      /\(\d{4}\)/, 
-      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}/i,
-      /\d{4}\s*[-–]\s*(\d{4}|present|current)/i,
-      /^[A-Z][a-z\s]+\s+[-–]\s+[A-Z]/,
-      /^[A-Z][a-z\s]+\s+\|\s+[A-Z]/,
-      /^\*\*[^*]+\*\*/,
-    ];
-    
-    return mainProjectPatterns.some(pattern => pattern.test(line));
-  };
-
-  const isEducationMainLine = (line) => {
-    const educationPatterns = [
-      /\b(b\.e\.|b\.tech|bachelor|master|m\.tech|m\.s\.|diploma|degree|engineering|science|arts|commerce|management|phd|doctorate)\b/i,
-      /\b(university|college|school|institute|academy)\b/i,
-      /\b(board|cbse|icse|state board|kseeb)\b/i,
-      /\d{4}\s*[-–]\s*\d{4}/i, 
-    ];
-    
-    return educationPatterns.some(pattern => pattern.test(line));
-  };
-  
-  const parseEducationItem = (text) => {
-    const item = {
-      title: "",
-      organization: "",
-      location: "",
-      period: "",
-      cgpa: "",
-      percentage: "",
-      details: [],
-      raw: text
-    };
-  
-    const patterns = {
-      degreeAt: /^(.+?)\s+[-–]\s+(.+?)(?:\s*,\s*(.+?))?(?:\s+\((.+?)\))?$/i,
-      boardSchool: /^(.+?)\s+[-–]\s+(.+?)(?:\s*,\s*(.+?))?(?:\s+\((.+?)\))?$/i,
-      period: /(\d{4})\s*[-–]\s*(\d{4})/i,
-      location: /,\s*([^,]+(?:,\s*[A-Z]{2})?)\s*$/i,
-      dateInParens: /\(\s*(.+?)\s*\)/,
-    };
-  
-    let match = text.match(patterns.degreeAt);
-    if (match) {
-      item.title = match[1]?.trim() || "";
-      item.organization = match[2]?.trim() || "";
-      item.location = match[3]?.trim() || "";
-      item.period = match[4]?.trim() || "";
-    }
-  
-    if (!item.period) {
-      const dateMatch = text.match(patterns.dateInParens);
-      if (dateMatch) {
-        const dateContent = dateMatch[1];
-        if (patterns.period.test(dateContent)) {
-          item.period = dateContent;
-        }
-      }
-    }
-  
-    if (!item.title && !item.organization) {
-      item.title = text;
-    }
-  
-    return item;
-  };
-
   const renderEducation = (education) => (
     <div className="space-y-6">
       {education.map((edu, index) => (
@@ -589,58 +513,42 @@ export default function Application() {
               <GraduationCap size={20} className="text-emerald-600" />
             </div>
             <div className="flex-1">
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between mb-3">
-                <div className="flex-1">
-                  <h4 className="text-xl font-bold text-gray-900 group-hover:text-emerald-600 transition-colors mb-1">
-                    {edu.title || edu.raw}
-                  </h4>
-                  {edu.organization && (
-                    <div className="flex items-center gap-2 text-gray-700 mb-2">
-                      <Building size={16} className="text-gray-500" />
-                      <span className="font-medium">{edu.organization}</span>
-                      {edu.location && (
-                        <>
-                          <span className="text-gray-400">•</span>
-                          <span className="text-gray-500">{edu.location}</span>
-                        </>
-                      )}
-                    </div>
+              <h4 className="text-xl font-bold text-gray-900 group-hover:text-emerald-600 transition-colors mb-1">
+                {edu.title || edu.raw}
+              </h4>
+              
+              {edu.organization && (
+                <div className="flex items-center gap-2 text-gray-700 mb-2">
+                  <Building size={16} className="text-gray-500" />
+                  <span className="font-medium">{edu.organization}</span>
+                  {edu.period && (
+                    <>
+                      <span className="text-gray-400">•</span>
+                      <span className="text-gray-500">{edu.period}</span>
+                    </>
                   )}
                 </div>
-                
-                <div className="flex flex-col lg:items-end gap-2 mt-2 lg:mt-0">
-                  {edu.period && (
-                    <div className="flex items-center gap-2 text-gray-500">
-                      <Calendar size={16} />
-                      <span className="text-sm">{edu.period}</span>
+              )}
+              
+              {(edu.cgpa || edu.percentage) && (
+                <div className="flex gap-2 mb-2">
+                  {edu.cgpa && (
+                    <div className="bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                      <span className="text-amber-700 font-semibold text-sm">
+                        CGPA: {edu.cgpa}
+                      </span>
                     </div>
                   )}
                   
-                  <div className="flex gap-2">
-                    {edu.cgpa && (
-                      <div className="bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
-                        <div className="flex items-center gap-2">
-                          <Trophy size={16} className="text-amber-600" />
-                          <span className="text-amber-700 font-semibold text-sm">
-                            CGPA: {edu.cgpa}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {edu.percentage && (
-                      <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
-                        <div className="flex items-center gap-2">
-                          <Star size={16} className="text-blue-600" />
-                          <span className="text-blue-700 font-semibold text-sm">
-                            {edu.percentage}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  {edu.percentage && (
+                    <div className="bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200">
+                      <span className="text-blue-700 font-semibold text-sm">
+                        {edu.percentage}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
               
               {edu.details && edu.details.length > 0 && (
                 <div className="mt-3 space-y-2">
@@ -659,63 +567,13 @@ export default function Application() {
     </div>
   );
 
-  const parseProjectName = (projectText) => {
-    if (!projectText) return 'Unnamed Project';
-    
-    const firstLine = projectText.split('\n')[0];
-    
-    let match = firstLine.match(/^(.+?)\s*\(GitHub\)/);
-    if (match) {
-      return match[1].trim();
-    }
-    
-    match = firstLine.match(/^(.+?)\s*\|/);
-    if (match) {
-      return match[1].trim();
-    }
-    
-    match = firstLine.match(/^(.+?)\s*[-–]/);
-    if (match) {
-      return match[1].trim();
-    }
-    
-    match = firstLine.match(/^([^|\-–(]+)/);
-    if (match) {
-      return match[1].trim();
-    }
-    
-    return firstLine.trim();
-  };
-
   const renderProjects = (projects) => (
     <div className="space-y-6">
       {projects.map((project, index) => {
         const lines = typeof project === 'string' ? project.split('\n').filter(line => line.trim()) : [];
-        const firstLine = lines[0] || (typeof project === 'string' ? project : project.title || project.raw || '');
-        
-        const projectName = parseProjectName(firstLine);
-        
-        let techStack = [];
-        let year = new Date().getFullYear();
-        
-        let projectMatch = firstLine.match(/\|\s*(.+?)\s*\((\d{4})\)/);
-        if (projectMatch) {
-          techStack = projectMatch[1].split(',').map(t => t.trim());
-          year = projectMatch[2];
-        } else {
-          projectMatch = firstLine.match(/\|\s*(.+?)$/);
-          if (projectMatch) {
-            techStack = projectMatch[1].split(',').map(t => t.trim());
-          } else {
-            const description = lines.join(' ');
-            const techMatch = description.match(/(?:built with|using|technologies?:?)\s*([^.]+)/i);
-            if (techMatch) {
-              techStack = techMatch[1].split(/[,\s]+/).filter(tech => tech.length > 2);
-            }
-          }
-        }
-        
-        const descriptionLines = lines.slice(1).filter(line => line.trim().startsWith('-') || line.trim().match(/^\s/));
+        const firstLine = lines[0] || '';
+        const projectName = firstLine.split('|')[0].trim();
+        const techStack = firstLine.includes('|') ? firstLine.split('|')[1].split(',').map(t => t.trim()) : [];
 
         return (
           <div key={index} className="bg-gray-50 p-6 rounded-xl border border-gray-100 hover:border-gray-200 transition-all duration-200 group">
@@ -724,69 +582,32 @@ export default function Application() {
                 <Code size={20} className="text-purple-600" />
               </div>
               <div className="flex-1">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-3">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h4 className="text-xl font-bold text-gray-900 group-hover:text-purple-600 transition-colors">
-                      {projectName}
-                    </h4>
-                    <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full border border-gray-200">
-                      <svg className="w-3 h-3 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 0C5.374 0 0 5.373 0 12 0 17.302 3.438 21.8 8.207 23.387c.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
-                      </svg>
-                      <span className="text-gray-600 text-xs font-medium">GitHub</span>
-                    </div>
-                    {year !== new Date().getFullYear() && (
-                      <div className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-md border border-purple-200 font-medium">
-                        {year}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <h4 className="text-xl font-bold text-gray-900 group-hover:text-purple-600 transition-colors mb-2">
+                  {projectName}
+                </h4>
                 
                 {techStack.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {techStack.slice(0, 8).map((tech, techIndex) => (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {techStack.map((tech, techIndex) => (
                       <span key={techIndex} className="px-3 py-1 bg-cyan-50 text-cyan-700 text-xs rounded-lg border border-cyan-200 font-medium">
                         {tech}
                       </span>
                     ))}
-                    {techStack.length > 8 && (
-                      <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg border border-gray-200 font-medium">
-                        +{techStack.length - 8} more
-                      </span>
-                    )}
                   </div>
                 )}
 
-                <div className="relative bg-white rounded-lg p-4 border border-gray-100 group-hover:border-purple-200 group-hover:bg-purple-50/30 transition-all duration-300">
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-400 to-purple-600 rounded-r-full opacity-60 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  <div className="pl-4">
-                    {descriptionLines.length > 0 ? (
-                      <div className="space-y-3">
-                        {descriptionLines.slice(0, 5).map((desc, descIndex) => (
-                          <div key={descIndex} className="flex items-start gap-3">
-                            <div className="w-1.5 h-1.5 bg-purple-500 rounded-full mt-2 flex-shrink-0 group-hover:bg-purple-600 transition-colors duration-300"></div>
-                            <p className="text-gray-600 text-sm leading-relaxed group-hover:text-gray-700 transition-colors duration-300">
-                              {desc.replace(/^[-\s]+/, '').trim()}
-                            </p>
-                          </div>
-                        ))}
-                        {descriptionLines.length > 5 && (
-                          <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                            <div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
-                            <span className="text-gray-500 text-xs font-medium">
-                              +{descriptionLines.length - 5} additional features
-                            </span>
-                          </div>
-                        )}
+                {lines.length > 1 && (
+                  <div className="space-y-2">
+                    {lines.slice(1).map((line, lineIndex) => (
+                      <div key={lineIndex} className="flex items-start gap-2">
+                        <div className="bg-purple-500 w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0"></div>
+                        <p className="text-gray-600 text-sm leading-relaxed">
+                          {line.replace(/^[-\s]+/, '').trim()}
+                        </p>
                       </div>
-                    ) : (
-                      <p className="text-gray-600 text-sm leading-relaxed group-hover:text-gray-700 transition-colors duration-300 pl-4">
-                        {project.replace(/^[-\s]*/, '').trim()}
-                      </p>
-                    )}
+                    ))}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -829,40 +650,83 @@ export default function Application() {
     </div>
   );
 
-  const handleToggleApproved = async (appId) => {
-    const token = getAuthToken();
-    const API_URL = import.meta.env.VITE_API_URL;
-    if (!token) {
-      navigate("/login");
-      return;
-    }
-  
-    try {
-      const res = await fetch(
-        `${API_URL}/interview/update-application/${appId}/`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Token ${token}`,
-          },
-        }
-      );
-  
-      if (!res.ok) {
-        throw new Error("Failed to update approval status");
+  // Chatbot functions
+  const openChatbot = (app) => {
+    setChatbotOpen(app);
+    setChatMessages([
+      {
+        role: "assistant",
+        content: `Hello! I'm an AI assistant that can help you understand ${app.user?.username || "this candidate"}'s application. Feel free to ask me anything!`
       }
-  
-      setApplications((prev) =>
-        prev.map((a) =>
-          a.id === appId ? { ...a, approved: !a.approved } : a
-        )
-      );
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not update approval status. Try again.");
+    ]);
+  };
+
+  const closeChatbot = () => {
+    setChatbotOpen(null);
+    setChatMessages([]);
+    setChatInput("");
+  };
+
+  const sendChatMessage = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput("");
+    
+    setChatMessages(prev => [...prev, { role: "user", content: userMessage }]);
+    setChatLoading(true);
+
+    // Simulate AI response
+    setTimeout(() => {
+      setChatMessages(prev => [...prev, { 
+        role: "assistant", 
+        content: `This is a simulated response about the candidate. In production, this would be powered by Groq AI analyzing the resume data and feedback.` 
+      }]);
+      setChatLoading(false);
+    }, 1000);
+  };
+
+  const handleChatKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
     }
   };
 
+   const handleToggleApproved = async (appId) => {
+  const token = localStorage.getItem('authToken');
+  const API_URL = import.meta.env.VITE_API_URL;
+  
+  if (!token) {
+    navigate("/login");
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${API_URL}/interview/update-application/${appId}/`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Token ${token}`,
+        },
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error("Failed to update approval status");
+    }
+
+    setApplications((prev) =>
+      prev.map((a) =>
+        a.id === appId ? { ...a, approved: !a.approved } : a
+      )
+    );
+  } catch (err) {
+    console.error(err);
+    alert("Could not update approval status. Try again.");
+  }
+};
   // Filter and sort applications
   const filteredApplications = applications.filter(app => {
     const matchesSearch = app.user?.username?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
@@ -912,21 +776,7 @@ export default function Application() {
               onClick={onClose}
               className="bg-gray-100 hover:bg-gray-200 p-2 rounded-lg transition-all duration-200 group"
             >
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width="20" 
-                height="20" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-                className="text-gray-600 group-hover:text-gray-900 transition-colors"
-              >
-                <path d="m18 6-12 12"/>
-                <path d="m6 6 12 12"/>
-              </svg>
+              <X size={20} className="text-gray-600 group-hover:text-gray-900 transition-colors" />
             </button>
           </div>
 
@@ -936,6 +786,116 @@ export default function Application() {
                 {feedback || "No feedback provided by the candidate."}
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ChatbotModal = ({ app, messages, input, loading, onClose, onSend, onInputChange, onKeyPress }) => {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div 
+          className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          onClick={onClose}
+        ></div>
+        
+        <div className="relative bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-3xl h-[80vh] flex flex-col">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+            <div className="flex items-center gap-3">
+              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-3 rounded-xl shadow-lg">
+                <Bot size={24} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900">AI Assistant</h3>
+                <p className="text-gray-600 flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  Ask about {app.user?.username || "this candidate"}'s application
+                </p>
+              </div>
+            </div>
+            
+            <button
+              onClick={onClose}
+              className="bg-gray-100 hover:bg-gray-200 p-2 rounded-lg transition-all duration-200 group"
+            >
+              <X size={20} className="text-gray-600 group-hover:text-gray-900 transition-colors" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+              >
+                <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                  msg.role === 'user' 
+                    ? 'bg-indigo-100' 
+                    : 'bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md'
+                }`}>
+                  {msg.role === 'user' ? (
+                    <User size={18} className="text-indigo-600" />
+                  ) : (
+                    <Bot size={18} className="text-white" />
+                  )}
+                </div>
+                
+                <div className={`flex-1 max-w-[80%] ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                  <div className={`inline-block p-4 rounded-2xl shadow-sm ${
+                    msg.role === 'user'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-gray-900 border border-gray-200'
+                  }`}>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                  <p className={`text-xs text-gray-500 mt-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+            
+            {loading && (
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
+                  <Bot size={18} className="text-white" />
+                </div>
+                <div className="bg-white border border-gray-200 p-4 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div ref={chatEndRef} />
+          </div>
+
+          <div className="p-6 border-t border-gray-200 bg-white">
+            <div className="flex gap-3">
+              <input
+                ref={chatInputRef}
+                type="text"
+                value={input}
+                onChange={onInputChange}
+                onKeyPress={onKeyPress}
+                placeholder="Ask about the candidate's experience, skills, or feedback..."
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                disabled={loading}
+              />
+              <button
+                onClick={onSend}
+                disabled={loading || !input.trim()}
+                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-6 py-3 rounded-xl transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+              >
+                <Send size={18} />
+                Send
+              </button>
+            </div>
+            <p className="text-gray-500 text-xs mt-2">Press Enter to send, Shift+Enter for new line</p>
           </div>
         </div>
       </div>
@@ -953,6 +913,7 @@ export default function Application() {
     );
   }
 
+  // View mode for resume and extracted data
   if (viewMode) {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900 p-6 relative">
@@ -1079,41 +1040,6 @@ export default function Application() {
                       parsedResume.certifications.length
                     )
                   }
-
-                  <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
-                    <button
-                      onClick={() => toggleSection("rawData")}
-                      className="w-full flex items-center justify-between group hover:bg-gray-50 p-4 rounded-xl transition-all duration-200"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="bg-gray-100 p-3 rounded-xl group-hover:bg-gray-200 transition-colors">
-                          <FileText size={24} className="text-gray-600" />
-                        </div>
-                        <div className="text-left">
-                          <h3 className="text-2xl font-bold text-gray-900 group-hover:text-gray-700 transition-colors">
-                            Raw Extracted Data
-                          </h3>
-                          <p className="text-gray-500 text-sm">Original extracted text for debugging</p>
-                        </div>
-                      </div>
-                      <div className="bg-gray-100 p-2 rounded-lg group-hover:bg-gray-200 transition-colors">
-                        {expandedSections.rawData ? 
-                          <ChevronUp size={20} className="text-gray-600" /> : 
-                          <ChevronDown size={20} className="text-gray-600" />
-                        }
-                      </div>
-                    </button>
-                    
-                    {expandedSections.rawData && (
-                      <div className="mt-6">
-                        <div className="bg-gray-800 p-6 rounded-xl border border-gray-300">
-                          <pre className="whitespace-pre-wrap text-gray-100 text-sm leading-relaxed max-h-96 overflow-y-auto font-mono">
-                            {viewMode.app.extratedResume || "No raw data available"}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </div>
               );
             })()}
@@ -1122,10 +1048,9 @@ export default function Application() {
       </div>
     );
   }
-  
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -1149,9 +1074,7 @@ export default function Application() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="max-w-7xl mx-auto p-6">
-        {/* Hero Section */}
         <div className="text-center mb-12 pt-8">
           <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-full text-sm font-medium mb-4">
             <FileText size={16} />
@@ -1165,10 +1088,8 @@ export default function Application() {
           </p>
         </div>
 
-        {/* Search and Filter Section */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
           <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-            {/* Search */}
             <div className="relative flex-1 max-w-md">
               <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
@@ -1180,7 +1101,6 @@ export default function Application() {
               />
             </div>
 
-            {/* Filters */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <Filter size={16} className="text-gray-500" />
@@ -1207,7 +1127,6 @@ export default function Application() {
             </div>
           </div>
 
-          {/* Stats */}
           <div className="flex items-center gap-6 mt-4 pt-4 border-t border-gray-100">
             <div className="text-sm text-gray-600">
               <span className="font-semibold text-gray-900">{sortedApplications.length}</span> applications found
@@ -1237,7 +1156,6 @@ export default function Application() {
                 className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 hover:border-indigo-200"
               >
                 <div className="flex items-center justify-between">
-                  {/* Candidate Info */}
                   <div className="flex items-center gap-4">
                     <div className="bg-indigo-100 text-indigo-600 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg">
                       {index + 1}
@@ -1249,7 +1167,7 @@ export default function Application() {
                       </div>
                       <div>
                         <button
-                          onClick={() => handleProfileClick(app.user?.id)}
+                          onClick={() => window.open(`/profile/${app.user?.id}`, "_blank")}
                           className="text-lg font-semibold text-gray-900 hover:text-indigo-600 transition-colors"
                         >
                           {app.user?.username || "Anonymous"}
@@ -1259,9 +1177,7 @@ export default function Application() {
                     </div>
                   </div>
 
-                  {/* Score and Actions */}
                   <div className="flex items-center gap-6">
-                    {/* Score */}
                     <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 ${getScoreBackgroundColor(app.score || 0)}`}>
                       <Star size={16} className={getScoreColor(app.score || 0)} />
                       <span className={`font-bold text-lg ${getScoreColor(app.score || 0)}`}>
@@ -1269,8 +1185,15 @@ export default function Application() {
                       </span>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => openChatbot(app)}
+                        className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg"
+                      >
+                        <Bot size={16} />
+                        AI Chat
+                      </button>
+
                       <button
                         onClick={() => setFeedbackModal({
                           feedback: app.feedback,
@@ -1298,7 +1221,7 @@ export default function Application() {
                         Data
                       </button>
 
-                      {app.approved ? (
+                     {app.approved ? (
                         <button
                           onClick={() => handleToggleApproved(app.id)}
                           className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
@@ -1322,12 +1245,24 @@ export default function Application() {
         )}
       </div>
 
-      {/* Feedback Modal */}
       {feedbackModal && (
         <FeedbackModal
           feedback={feedbackModal.feedback}
           candidateName={feedbackModal.candidateName}
           onClose={() => setFeedbackModal(null)}
+        />
+      )}
+
+      {chatbotOpen && (
+        <ChatbotModal
+          app={chatbotOpen}
+          messages={chatMessages}
+          input={chatInput}
+          loading={chatLoading}
+          onClose={closeChatbot}
+          onSend={sendChatMessage}
+          onInputChange={(e) => setChatInput(e.target.value)}
+          onKeyPress={handleChatKeyPress}
         />
       )}
     </div>

@@ -31,13 +31,13 @@ export default function AppRoutes() {
       <Route path="/applications/:id" element={<Application />} />
       <Route path="/leaderboard/:id" element={<Leaderboard />} />
   <Route 
-    path="/interview/start/:interviewId" 
-    element={
-      <EnhancedProctoredRouteWrapper>
-        <InterviewSession />
-      </EnhancedProctoredRouteWrapper>
-    } 
-  />
+  path="/interview/start/:interviewId" 
+  element={
+    <EnhancedProctoredRouteWrapper>
+      <InterviewSession />
+    </EnhancedProctoredRouteWrapper>
+  } 
+/>
   <Route
   path="/resume-platform/:sessionId"
   element={

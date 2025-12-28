@@ -2,13 +2,15 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getAuthToken, fetchWithToken } from "../utils/handleToken";
 import { Loader2, Send, MessageCircle, User, Mic, MicOff, Volume2, VolumeX, Play, Sparkles } from "lucide-react";
+import { useSession } from '../utils/SessionContext'; // Add this import
 
 const InterviewSession = () => {
   const { interviewId } = useParams();
   const navigate = useNavigate();
+  const { sessionId, setSessionId } = useSession(); // Add this hook
+
   const token = getAuthToken();
   const [loading, setLoading] = useState(true);
-  const [sessionId, setSessionId] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [answer, setAnswer] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
@@ -468,7 +470,7 @@ const InterviewSession = () => {
       if (!data.session_id) {
         throw new Error("No session ID received from server");
       }
-
+      console.log('Setting session ID in context:', data.session_id);
       setSessionId(data.session_id);
       
       // Handle initial question - try different field names
