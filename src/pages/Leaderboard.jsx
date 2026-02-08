@@ -4,12 +4,7 @@ import {
   Trophy, Medal, Award, User, Calendar, Clock, TrendingUp, Eye, FileText, Download, ArrowLeft,
   Star, BookOpen, Briefcase, GraduationCap, Code, Award as AwardIcon, Target, CheckCircle,
   XCircle, AlertCircle, LayoutDashboard, MessageSquare, FileCode, BarChart2, Info,
-<<<<<<< HEAD
-  Users, Activity, Filter, Search, ChevronDown, ChevronUp,
-  ImageIcon
-=======
   Users, Activity, Filter, Search, ChevronDown, ChevronUp, Bot, Send, X
->>>>>>> 2b5e3b265c318f58e12239e186669d703cbb6abd
 } from "lucide-react";
 import { Chart as ChartJS, registerables } from 'chart.js';
 import { Bar, Pie, Line, Doughnut } from 'react-chartjs-2';
@@ -657,11 +652,6 @@ console.log("Sorted Data:", sortedData);
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-3 py-1 rounded-full text-sm font-bold border ${getScoreColor(candidate.Devscore)}`}>
-<<<<<<< HEAD
-                            {typeof candidate.Devscore === 'number' ? candidate.Devscore.toFixed(1) : Math.random(0,3).toFixed(1)}
-=======
-                            {typeof candidate.Devscore === 'number' ? candidate.Devscore.toFixed(1) : '0'}
->>>>>>> 2b5e3b265c318f58e12239e186669d703cbb6abd
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
